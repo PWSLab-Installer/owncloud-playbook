@@ -1,0 +1,231 @@
+---
+
+    -   name: Create schema for owncloud
+        shell: mysql -u root -p'root' -e "CREATE SCHEMA owncloud DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;"
+
+    -   name: Create DB User owncloud
+        shell: mysql -u root -p'root' -e "CREATE USER 'owncloud'@'localhost' IDENTIFIED BY 'owncloud';"
+
+    -   name: Grant Privs to User owncloud
+        shell: mysql -u root -p'root' -e "GRANT ALL PRIVILEGES ON owncloud.* TO 'owncloud'@'localhost';"
+    
+    -   name: Alter Privs to User owncloud
+        shell: mysql -u root -p'root' -e "ALTER USER owncloud@'localhost' IDENTIFIED WITH mysql_native_password BY 'owncloud';"
+        when:
+            - os_check.stdout | regex_search("Ubuntu 20")
+
+    -   name: Create owncloud Directory
+        file:
+            path: /var/www/owncloud
+            state: directory
+            # recurse: yes
+            # owner: www-data
+            # mode: '0755'
+
+    -   name: Download owncloud
+        get_url:
+            url: https://download.owncloud.org/community/owncloud-{{ owncloud_version }}.zip
+            dest: /tmp
+        when:
+            - os_check.stdout | regex_search("Ubuntu") or os_check.stdout | regex_search("CentOS")
+
+
+    -   name: Extract owncloud into /tmp
+        unarchive:
+            src: /tmp/owncloud-{{ owncloud_version }}.zip
+            dest: /var/www
+        when:
+            - os_check.stdout | regex_search("Ubuntu") or os_check.stdout | regex_search("CentOS")
+
+
+    # -   name: Move the Repos Around
+    #     command: 
+    #          mv /tmp/upload/ /var/www/html/owncloud
+    #     ignore_errors: yes
+    #     when:
+    #         - os_check.stdout | regex_search("Ubuntu") or os_check.stdout | regex_search("CentOS")
+    
+    -   name: Grant Permissions
+        file:
+            path: /var/www/owncloud
+            recurse: yes
+            owner: www-data
+            mode: '0755'
+        when:
+            - os_check.stdout | regex_search("Ubuntu") 
+
+    -   name: Grant Permissions
+        file:
+            path: /var/www/owncloud
+            recurse: yes
+            owner: apache
+            mode: '0755'
+        when:
+            - os_check.stdout | regex_search("CentOS")
+
+
+    # -   name: Copy files
+    #     copy:
+    #         src: /var/www/html/owncloud/config-dist.php
+    #         dest: /var/www/html/owncloud/config.php
+    #         owner: www-data
+    #         group: www-data
+    #         mode: '0777'
+    #     when:
+    #         - os_check.stdout | regex_search("Ubuntu") 
+
+    # -   name: Copy files
+    #     copy:
+    #         src: /var/www/html/owncloud/admin/config-dist.php
+    #         dest: /var/www/html/owncloud/admin/config.php
+    #         owner: www-data
+    #         group: www-data
+    #         mode: '0777'
+    #     when:
+    #         - os_check.stdout | regex_search("Ubuntu") 
+
+    
+    # -   name: Copy files
+    #     copy:
+    #         src: /var/www/html/owncloud/config-dist.php
+    #         dest: /var/www/html/owncloud/config.php
+    #         owner: apache
+    #         group: apache
+    #         mode: '0777'
+    #     when:
+    #         - os_check.stdout | regex_search("CentOS") 
+
+    # -   name: Copy files
+    #     copy:
+    #         src: /var/www/html/owncloud/admin/config-dist.php
+    #         dest: /var/www/html/owncloud/admin/config.php
+    #         owner: apache
+    #         group: apache
+    #         mode: '0777'
+    #     when:
+    #         - os_check.stdout | regex_search("CentOS") 
+
+    -   name: Sets Apache conf file - Ubuntu
+        become: true
+        template:
+            src: "owncloud.conf.j2"
+            dest: "/etc/apache2/sites-available/owncloud.conf"
+        when:
+                - os_check.stdout | regex_search("Ubuntu")
+
+    -   name: Disable default config
+        command: a2ensite owncloud.conf
+        when:
+            - os_check.stdout | regex_search("Ubuntu")
+
+    -   name: Disable default config
+        command: a2dissite 000-default.conf
+        when:
+            - os_check.stdout | regex_search("Ubuntu")
+
+    -   name: Install PHP Packages
+        apt: 
+            name: "{{ item }}" 
+            update_cache: yes 
+            state: present
+        loop: 
+            - php-cli
+            - php-common
+            - php-mbstring
+            - php-gd
+            - php-intl
+            - php-xml
+            - php-mysql
+            - php-zip
+            - php-curl
+            - php-xmlrpc
+            - libapache2-mod-php
+            - php-gd
+            - php-zip
+            - php-curl
+        when:
+            - os_check.stdout | regex_search("Ubuntu")
+
+    -   name: Restart Apache
+        service:
+            name: apache2
+            state: restarted
+        when:
+            - os_check.stdout | regex_search("Ubuntu")
+
+    -   name: Sets Apache conf file - CentOS
+        become: true
+        template:
+            src: "owncloud.conf.j2"
+            dest: "/etc/httpd/conf.d/owncloud.conf"
+        when:
+                - os_check.stdout | regex_search("CentOS")
+
+    -   name: Install PHP Packages
+        yum: 
+            name: "{{ item }}" 
+            update_cache: yes 
+            state: present
+        loop: 
+            - php-mcrypt
+            - curl
+            - zlib
+            - php-gd
+            - php-mbstring
+            - php-xml
+            - php-mysql
+            - php-zip   
+        when:
+            - os_check.stdout | regex_search("CentOS Linux 8")
+
+    -   name: Enable remi repo - CentOS 7
+        command: yum-config-manager --enable remi-php74
+        when: 
+            - os_check.stdout | regex_search("CentOS Linux 7")
+
+    -   name: Install PHP Packages
+        yum: 
+            name: "{{ item }}" 
+            update_cache: yes 
+            state: present
+        loop: 
+            - curl
+            - zlib
+            - php-gd
+            - php-mbstring
+            - php-xml
+            - php-zip
+            - php-pdo_mysql
+        when:
+            - os_check.stdout | regex_search("CentOS Linux 7")
+
+    -   name: Restart Apache
+        service:
+            name: httpd
+            state: restarted
+        when:
+            - os_check.stdout | regex_search("CentOS")
+
+    -   name: Granting Permissions
+        file:
+            path: /var/www/html/owncloud
+            recurse: yes
+            owner: www-data
+            mode: '0777'
+        when:
+            - os_check.stdout | regex_search("Ubuntu") 
+
+    -   name: Granting Permissions
+        file:
+            path: /var/www/html/owncloud
+            recurse: yes
+            owner: apache
+            mode: '0777'
+        when:
+            - os_check.stdout | regex_search("CentOS") 
+
+    -   name: Disable SELinux
+        selinux:
+            state: disabled
+        when:
+            - os_check.stdout | regex_search("CentOS") 
